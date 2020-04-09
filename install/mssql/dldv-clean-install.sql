@@ -13,10 +13,8 @@ SET NUMERIC_ROUNDABORT OFF;
 
 
 GO
-/* 
-Schema name must be a valid system name. There is no guarantee the identifier will always be quoted. 
-*/
-:setvar SchemaName "dldv"
+:setvar SchemaName "rules"
+
 
 GO
 :on error exit
@@ -45,6 +43,32 @@ CREATE SCHEMA [$(SchemaName)]
 
 
 GO
+PRINT N'Creating [$(SchemaName)].[Severity]...';
+
+
+GO
+CREATE TABLE [$(SchemaName)].[Severity] (
+    [Name]        NVARCHAR (64)   NOT NULL,
+    [Description] NVARCHAR (1024) NULL,
+    CONSTRAINT [PK_$(SchemaName)_Severity] PRIMARY KEY CLUSTERED ([Name] ASC)
+);
+
+
+GO
+PRINT N'Creating [$(SchemaName)].[JobRule]...';
+
+
+GO
+CREATE TABLE [$(SchemaName)].[JobRule] (
+    [Job]      NVARCHAR (64) NOT NULL,
+    [Rule]     NVARCHAR (64) NOT NULL,
+    [Severity] NVARCHAR (64) NOT NULL,
+    [Disabled] BIT           NOT NULL,
+    CONSTRAINT [PK_$(SchemaName)_JobRule] PRIMARY KEY CLUSTERED ([Job] ASC, [Rule] ASC)
+);
+
+
+GO
 PRINT N'Creating [$(SchemaName)].[Group]...';
 
 
@@ -62,9 +86,26 @@ PRINT N'Creating [$(SchemaName)].[Variable]...';
 GO
 CREATE TABLE [$(SchemaName)].[Variable] (
     [Name]        NVARCHAR (64)   NOT NULL,
-    [Type]        NVARCHAR (64)   NOT NULL,
     [Description] NVARCHAR (1024) NULL,
     CONSTRAINT [PK_$(SchemaName)_Variable] PRIMARY KEY CLUSTERED ([Name] ASC)
+);
+
+
+GO
+PRINT N'Creating [$(SchemaName)].[Log]...';
+
+
+GO
+CREATE TABLE [$(SchemaName)].[Log] (
+    [Time]      DATETIME2 (7)   NULL,
+    [Job]       NVARCHAR (64)   NULL,
+    [Rule]      NVARCHAR (64)   NULL,
+    [Severity]  NVARCHAR (64)   NULL,
+    [Status]    NVARCHAR (9)    NULL,
+    [RowData]   NVARCHAR (4000) NULL,
+    [Duration]  INT             NULL,
+    [Exception] NVARCHAR (4000) NULL,
+    [Log]       NVARCHAR (64)   NULL
 );
 
 
@@ -77,33 +118,6 @@ CREATE TABLE [$(SchemaName)].[Job] (
     [Name]        NVARCHAR (64)   NOT NULL,
     [Description] NVARCHAR (1024) NULL,
     CONSTRAINT [PK_$(SchemaName)_Job] PRIMARY KEY CLUSTERED ([Name] ASC)
-);
-
-
-GO
-PRINT N'Creating [$(SchemaName)].[JobRule]...';
-
-
-GO
-CREATE TABLE [$(SchemaName)].[JobRule] (
-    [Job]      NVARCHAR (64) NOT NULL,
-    [Rule]     NVARCHAR (64) NOT NULL,
-    [Severity] NVARCHAR (7)  NOT NULL,
-    [Disabled] BIT           NOT NULL,
-    CONSTRAINT [PK_$(SchemaName)_JobRule] PRIMARY KEY CLUSTERED ([Job] ASC, [Rule] ASC)
-);
-
-
-GO
-PRINT N'Creating [$(SchemaName)].[JobVariable]...';
-
-
-GO
-CREATE TABLE [$(SchemaName)].[JobVariable] (
-    [Job]      NVARCHAR (64)  NOT NULL,
-    [Variable] NVARCHAR (64)  NOT NULL,
-    [Value]    NVARCHAR (256) NOT NULL,
-    CONSTRAINT [PK_$(SchemaName)_JobVariable] PRIMARY KEY CLUSTERED ([Job] ASC, [Variable] ASC)
 );
 
 
@@ -133,30 +147,16 @@ CREATE TABLE [$(SchemaName)].[Rule] (
 
 
 GO
-PRINT N'Creating [$(SchemaName)].[Log]...';
+PRINT N'Creating [$(SchemaName)].[JobVariable]...';
 
 
 GO
-CREATE TABLE [$(SchemaName)].[Log] (
-    [Time]      DATETIME2 (7)   NULL,
-    [Job]       NVARCHAR (64)   NULL,
-    [Rule]      NVARCHAR (64)   NULL,
-    [Severity]  NVARCHAR (7)    NULL,
-    [Status]    NVARCHAR (9)    NULL,
-    [RowData]   NVARCHAR (4000) NULL,
-    [Duration]  INT             NULL,
-    [Exception] NVARCHAR (4000) NULL,
-    [Log]       NVARCHAR (64)   NULL
+CREATE TABLE [$(SchemaName)].[JobVariable] (
+    [Job]      NVARCHAR (64) NOT NULL,
+    [Variable] NVARCHAR (64) NOT NULL,
+    [Value]    SQL_VARIANT   NOT NULL,
+    CONSTRAINT [PK_$(SchemaName)_JobVariable] PRIMARY KEY CLUSTERED ([Job] ASC, [Variable] ASC)
 );
-
-
-GO
-PRINT N'Creating [$(SchemaName)].[DF_$(SchemaName)_Variable_Type]...';
-
-
-GO
-ALTER TABLE [$(SchemaName)].[Variable]
-    ADD CONSTRAINT [DF_$(SchemaName)_Variable_Type] DEFAULT ('NUMBER') FOR [Type];
 
 
 GO
@@ -187,21 +187,12 @@ ALTER TABLE [$(SchemaName)].[JobRule] WITH NOCHECK
 
 
 GO
-PRINT N'Creating [$(SchemaName)].[FK_$(SchemaName)_JobVariable_Job]...';
+PRINT N'Creating [$(SchemaName)].[FK_$(SchemaName)_JobRule_Severity]...';
 
 
 GO
-ALTER TABLE [$(SchemaName)].[JobVariable] WITH NOCHECK
-    ADD CONSTRAINT [FK_$(SchemaName)_JobVariable_Job] FOREIGN KEY ([Job]) REFERENCES [$(SchemaName)].[Job] ([Name]) ON DELETE CASCADE ON UPDATE CASCADE;
-
-
-GO
-PRINT N'Creating [$(SchemaName)].[FK_$(SchemaName)_JobVariable_Variable]...';
-
-
-GO
-ALTER TABLE [$(SchemaName)].[JobVariable] WITH NOCHECK
-    ADD CONSTRAINT [FK_$(SchemaName)_JobVariable_Variable] FOREIGN KEY ([Variable]) REFERENCES [$(SchemaName)].[Variable] ([Name]);
+ALTER TABLE [$(SchemaName)].[JobRule] WITH NOCHECK
+    ADD CONSTRAINT [FK_$(SchemaName)_JobRule_Severity] FOREIGN KEY ([Severity]) REFERENCES [$(SchemaName)].[Severity] ([Name]) ON UPDATE CASCADE;
 
 
 GO
@@ -223,12 +214,21 @@ ALTER TABLE [$(SchemaName)].[RuleGroup] WITH NOCHECK
 
 
 GO
-PRINT N'Creating [$(SchemaName)].[CK_$(SchemaName)_Variable_Type]...';
+PRINT N'Creating [$(SchemaName)].[FK_$(SchemaName)_JobVariable_Job]...';
 
 
 GO
-ALTER TABLE [$(SchemaName)].[Variable] WITH NOCHECK
-    ADD CONSTRAINT [CK_$(SchemaName)_Variable_Type] CHECK ([Type]='STRING' OR [Type]='NUMBER');
+ALTER TABLE [$(SchemaName)].[JobVariable] WITH NOCHECK
+    ADD CONSTRAINT [FK_$(SchemaName)_JobVariable_Job] FOREIGN KEY ([Job]) REFERENCES [$(SchemaName)].[Job] ([Name]) ON DELETE CASCADE ON UPDATE CASCADE;
+
+
+GO
+PRINT N'Creating [$(SchemaName)].[FK_$(SchemaName)_JobVariable_Variable]...';
+
+
+GO
+ALTER TABLE [$(SchemaName)].[JobVariable] WITH NOCHECK
+    ADD CONSTRAINT [FK_$(SchemaName)_JobVariable_Variable] FOREIGN KEY ([Variable]) REFERENCES [$(SchemaName)].[Variable] ([Name]);
 
 
 GO
@@ -238,15 +238,6 @@ PRINT N'Creating [$(SchemaName)].[CK_$(SchemaName)_Variable_Name]...';
 GO
 ALTER TABLE [$(SchemaName)].[Variable] WITH NOCHECK
     ADD CONSTRAINT [CK_$(SchemaName)_Variable_Name] CHECK (NOT [Name] like '%[^A-Z]%' AND NOT [Name] like '%RESERVED');
-
-
-GO
-PRINT N'Creating [$(SchemaName)].[CK_$(SchemaName)_JobRule_Severity]...';
-
-
-GO
-ALTER TABLE [$(SchemaName)].[JobRule] WITH NOCHECK
-    ADD CONSTRAINT [CK_$(SchemaName)_JobRule_Severity] CHECK ([Severity]='WARNING' OR [Severity]='ERROR');
 
 
 GO
@@ -265,22 +256,28 @@ PRINT N'Creating [$(SchemaName)].[JobVariableHelp]...';
 GO
 
 
+
+
 CREATE VIEW [$(SchemaName)].[JobVariableHelp]
 AS
 SELECT
-	JobVariable.Job,
-	JobVariable.Variable,
-	Variable.[Type],
-	JobVariable.[Value],
-	Variable.[Description]
+  JobVariable.Job,
+  JobVariable.Variable,
+  SQL_VARIANT_PROPERTY(JobVariable.[Value],'BaseType') AS BaseType,  
+  SQL_VARIANT_PROPERTY(JobVariable.[Value],'Precision') AS [Precision],  
+  SQL_VARIANT_PROPERTY(JobVariable.[Value],'Scale') AS Scale,
+  SQL_VARIANT_PROPERTY(JobVariable.[Value],'MaxLength') AS [MaxLength],
+  SQL_VARIANT_PROPERTY(JobVariable.[Value],'Collation') AS [Collation],
+  JobVariable.[Value],
+  Variable.[Description]
 FROM
-	$(SchemaName).JobVariable
-	JOIN
-	$(SchemaName).Job
-		ON JobVariable.Job = Job.Name
-	JOIN
-	$(SchemaName).Variable
-		ON JobVariable.[Variable] = [Variable].Name;
+  [$(SchemaName)].JobVariable
+  JOIN
+  [$(SchemaName)].Job
+    ON JobVariable.Job = Job.Name
+  JOIN
+  [$(SchemaName)].Variable
+    ON JobVariable.[Variable] = [Variable].Name;
 GO
 PRINT N'Creating [$(SchemaName)].[RuleGroupHelp]...';
 
@@ -288,17 +285,18 @@ PRINT N'Creating [$(SchemaName)].[RuleGroupHelp]...';
 GO
 
 
+
 CREATE VIEW [$(SchemaName)].[RuleGroupHelp]
 AS
 SELECT
-	RuleGroup.[Group],
-	RuleGroup.[Rule],
-	[Rule].[Description]
+  RuleGroup.[Group],
+  RuleGroup.[Rule],
+  [Rule].[Description]
 FROM
-	$(SchemaName).RuleGroup
-	INNER JOIN
-	$(SchemaName).[Rule]
-		ON RuleGroup.[Rule] = [Rule].Name;
+  [$(SchemaName)].RuleGroup
+  INNER JOIN
+  [$(SchemaName)].[Rule]
+    ON RuleGroup.[Rule] = [Rule].Name;
 GO
 PRINT N'Creating [$(SchemaName)].[JobRuleHelp]...';
 
@@ -306,28 +304,107 @@ PRINT N'Creating [$(SchemaName)].[JobRuleHelp]...';
 GO
 
 
+
+
 CREATE VIEW [$(SchemaName)].[JobRuleHelp]
 AS
 SELECT
-	JobRule.Job,
-	JobRule.[Rule],
-	JobRule.Severity,
-	JobRule.[Disabled],
-	[Rule].[Description],
-	[Rule].[Statement]
+  JobRule.Job,
+  JobRule.[Rule],
+  JobRule.Severity,
+  JobRule.[Disabled],
+  [Rule].[Description],
+  [Rule].[Statement]
 FROM
-	$(SchemaName).JobRule
-	INNER JOIN
-	$(SchemaName).Job
-		ON JobRule.Job = Job.Name
-	INNER JOIN
-	$(SchemaName).[Rule]
-		ON JobRule.[Rule] = [Rule].Name;
+  [$(SchemaName)].JobRule
+  INNER JOIN
+  [$(SchemaName)].Job
+    ON JobRule.Job = Job.Name
+  INNER JOIN
+  [$(SchemaName)].[Rule]
+    ON JobRule.[Rule] = [Rule].Name;
+GO
+PRINT N'Creating [$(SchemaName)].[ConfigurePrepareDurationUnit]...';
+
+
+GO
+
+
+
+
+
+CREATE FUNCTION [$(SchemaName)].[ConfigurePrepareDurationUnit] ()
+RETURNS NVARCHAR(64)
+AS
+BEGIN
+  
+  RETURN 
+    'MILLISECOND'
+    --'SECOND'
+    ;
+
+END
+GO
+PRINT N'Creating [$(SchemaName)].[ConfigurePrepareIndent]...';
+
+
+GO
+
+
+
+CREATE FUNCTION [$(SchemaName)].[ConfigurePrepareIndent] ()
+RETURNS NVARCHAR(8)
+AS
+BEGIN
+  
+  RETURN 
+    --'	' /* Tab */
+    '  ' /* 2-Spaces */
+    ;
+
+END
+GO
+PRINT N'Creating [$(SchemaName)].[ConfigurePrepareNewline]...';
+
+
+GO
+
+
+CREATE FUNCTION [$(SchemaName)].[ConfigurePrepareNewline] ()
+RETURNS NVARCHAR(2)
+AS
+BEGIN
+  
+  RETURN 
+    CHAR(13) + CHAR(10);
+
+END
+GO
+PRINT N'Creating [$(SchemaName)].[ConfigurePrepareRowDataFormat]...';
+
+
+GO
+
+
+
+CREATE FUNCTION [$(SchemaName)].[ConfigurePrepareRowDataFormat] ()
+RETURNS NVARCHAR(64)
+AS
+BEGIN
+  
+  RETURN 
+    'JSON AUTO'
+    --'XML RAW'
+    ;
+
+END
 GO
 PRINT N'Creating [$(SchemaName)].[AssignGroup]...';
 
 
 GO
+
+
 
 
 /*
@@ -337,7 +414,8 @@ GO
   Allows rules to be assigned to a job as a group. Follows the merge logic of 
   procedure AssignRule.
 
-  Job and group must already be defined in tables Job and Group, respectively.
+  Job, severity, and group must already be defined in tables Job, Severity,
+  and Group, respectively.
 
   Parameters:
 
@@ -346,21 +424,20 @@ GO
 
     @Group - The unique name of the group which contains the rules to assign.
 
-    @Severity - How the rules' failures will be treated; ERROR or WARNING; 
-      Default ERROR.
+    @Severity - What severity rule failures will be treated.
     
     @Disabled - Whether the rules will be diabled on assignment. Default 
       false (0).
 
   Return value: 
 
-    0 if successful; non-zero, otherwise.
+    0 if successful, non-zero otherwise.
 
 */
 CREATE PROCEDURE [$(SchemaName)].[AssignGroup] 
   @Job       NVARCHAR(64),
   @Group     NVARCHAR(64),
-  @Severity  NVARCHAR(7) = 'ERROR', /* ERROR or WARNING */
+  @Severity  NVARCHAR(64),
   @Disabled  BIT = 0
 AS
 BEGIN
@@ -379,6 +456,9 @@ PRINT N'Creating [$(SchemaName)].[AssignVariable]...';
 GO
 
 
+
+
+
 /*
 
   AssignVariable
@@ -388,7 +468,7 @@ GO
 
   Job and vaiable must already be defined in tables Job and Variable, respectively.
 
-  Value is verified for data type as defined for the variable.
+  Value cannot be null.
 
   Parameters:
 
@@ -400,73 +480,54 @@ GO
 
   Return value:
 
-    0 if successful; non-zero, otherwise.
+    0 if successful, non-zero otherwise.
 
 */
 CREATE PROCEDURE [$(SchemaName)].[AssignVariable] 
-	@Job       NVARCHAR(64),
-	@Variable  NVARCHAR(64),
-	@Value     NVARCHAR(256)
+  @Job       NVARCHAR(64),
+  @Variable  NVARCHAR(64),
+  @Value     SQL_VARIANT
 AS
 BEGIN
-	
-	SET NOCOUNT ON;
+  
+  SET NOCOUNT ON;
 
-	IF NOT EXISTS (SELECT 1 FROM $(SchemaName).Job WHERE Name = @Job)
-	BEGIN
-		RAISERROR('Job [%s] not found. INSERT table Job to create.',16,1,@job);
-		RETURN 1;
-	END;
+  IF NOT EXISTS (SELECT 1 FROM [$(SchemaName)].Job WHERE Name = @Job)
+  BEGIN
+    RAISERROR('Job [%s] not found. INSERT table Job to create.',16,1,@job);
+    RETURN 1;
+  END;
 
-	IF NOT EXISTS (SELECT 1 FROM $(SchemaName).Variable WHERE Name = @Variable)
-	BEGIN
-		RAISERROR('Variable [%s] not found. INSERT table Variable to create.',16,1,@variable);
-		RETURN 1;
-	END;
+  IF NOT EXISTS (SELECT 1 FROM [$(SchemaName)].Variable WHERE Name = @Variable)
+  BEGIN
+    RAISERROR('Variable [%s] not found. INSERT table Variable to create.',16,1,@variable);
+    RETURN 1;
+  END;  
 
-	DECLARE @TestCommand NVARCHAR(4000);
-	DECLARE @Type NVARCHAR(64) = (SELECT [Type] FROM $(SchemaName).Variable WHERE Name = @Variable);
+  IF @Value IS NULL
+  BEGIN
+    RAISERROR('Value cannot be null.',16,1);
+    RETURN 1;
+  END; 
 
-BEGIN TRY
+  IF NOT EXISTS (
+    SELECT 1
+    FROM
+      [$(SchemaName)].JobVariable
+    WHERE	
+      Job = @Job
+      AND Variable = @Variable
+    ) INSERT [$(SchemaName)].JobVariable (Job, Variable, Value) 
+      VALUES (@Job, @Variable, @Value)
+  ELSE
+    UPDATE [$(SchemaName)].JobVariable
+      SET Value = @Value
+    WHERE
+      Job = @Job
+      AND Variable = @Variable
+      ; 
 
-	SET @TestCommand =
-		'SET NOEXEC ON; DECLARE @'+@Variable+' ' + 
-				CASE @type 
-					WHEN 'NUMBER' THEN 'INT = '+@Value
-					WHEN 'STRING' THEN 'NVARCHAR(256) = '+@Value
-					ELSE NULL
-				END + '; SELECT @'+@Variable+';'
-				;
-
-	EXECUTE (@TestCommand);
-
-	IF NOT EXISTS (
-		SELECT 1
-		FROM
-			$(SchemaName).JobVariable
-		WHERE	
-			Job = @Job
-			AND Variable = @Variable
-		) INSERT $(SchemaName).JobVariable (Job, Variable, Value) 
-			VALUES (@Job, @Variable, @Value)
-	ELSE
-		UPDATE $(SchemaName).JobVariable
-			SET Value = @Value
-		WHERE
-			Job = @Job
-			AND Variable = @Variable
-			; 
-
-	RETURN 0;
-
-END TRY
-BEGIN CATCH
-
-	THROW;
-
-	RETURN 1;
-
-END CATCH
+  RETURN 0;
 
 END
 GO
@@ -474,6 +535,9 @@ PRINT N'Creating [$(SchemaName)].[PrepareRoutine]...';
 
 
 GO
+
+
+
 
 
 /*
@@ -504,144 +568,152 @@ GO
 
 */
 CREATE PROCEDURE [$(SchemaName)].[PrepareRoutine] 
-	@Job      NVARCHAR(64),
-	@Rule     NVARCHAR(64),
-	@Log      NVARCHAR(64),
-	@Routine  NVARCHAR(MAX) OUTPUT
+  @Job      NVARCHAR(64),
+  @Rule     NVARCHAR(64),
+  @Log      NVARCHAR(64),
+  @Routine  NVARCHAR(MAX) OUTPUT
 AS
 BEGIN
-	
-	SET NOCOUNT ON;
+  
+  SET NOCOUNT ON;
 
-	DECLARE @UserBlock NVARCHAR(MAX),
-		@Severity NVARCHAR(7);
+  DECLARE @UserBlock NVARCHAR(MAX),
+    @Severity NVARCHAR(64);
 
-	SELECT 
-		@UserBlock = [Rule].[Statement],
-		@Severity = JobRule.Severity
-	FROM 
-		$(SchemaName).JobRule
-		JOIN $(SchemaName).[Rule] ON JobRule.[Rule] = [Rule].Name 
-	WHERE 
+  SELECT 
+    @UserBlock = [Rule].[Statement],
+    @Severity = JobRule.Severity
+  FROM 
+    [$(SchemaName)].JobRule
+    INNER JOIN 
+    [$(SchemaName)].[Rule] ON JobRule.[Rule] = [Rule].Name 
+  WHERE 
     JobRule.Job = @Job
-		AND JobRule.[Rule] = @Rule
-		AND JobRule.[Disabled] = 0;
+    AND JobRule.[Rule] = @Rule
+    AND JobRule.[Disabled] = 0;
 
-	IF @UserBlock IS NULL
-	BEGIN
-		RAISERROR('Job rule [%s].[%s] not found.',16,1,@Job,@Rule);
-		RETURN 1;
-	END;
+  IF @UserBlock IS NULL
+  BEGIN
+    RAISERROR('Job rule [%s].[%s] not found.',16,1,@Job,@Rule);
+    RETURN 1;
+  END;
 
-	IF @Log IS NULL
-	BEGIN
-		RAISERROR('Log is required.',16,1);
-		RETURN 1;
-	END;
+  IF @Log IS NULL
+  BEGIN
+    RAISERROR('Log is required.',16,1);
+    RETURN 1;
+  END;
 
-	DECLARE @Indent NVARCHAR = '  ',
-		@Newline NVARCHAR = CHAR(13) + CHAR(10);
+  DECLARE @Indent NVARCHAR(8) = $(SchemaName).ConfigurePrepareIndent(),
+    @Newline NVARCHAR(8) = $(SchemaName).ConfigurePrepareNewline(),
+    @DurationUnit NVARCHAR(64) = $(SchemaName).ConfigurePrepareDurationUnit(),
+    @DataRowFormat NVARCHAR(64) = $(SchemaName).ConfigurePrepareRowDataFormat();
+
 
 
   /* Assemble the variables in @VariableBlock */
 
-	DECLARE
-		@Variable VARCHAR(64),
-		@Type VARCHAR(16),
-		@Value NVARCHAR(256),
-		@VariableBlock NVARCHAR(MAX)
-		;
+  DECLARE
+    @Variable VARCHAR(64),
+    @Value SQL_VARIANT,
+    @BaseType NVARCHAR(256),
+    @MaxLength INT,
+    @VariableBlock NVARCHAR(MAX)
+    ;
 
-	DECLARE VariableCursor CURSOR
-	FOR
-	SELECT
-		Variable.Name AS Variable,
-		Variable.[Type],
-		JobVariable.[Value]
-	FROM
-		$(SchemaName).JobVariable
-		INNER JOIN
-		$(SchemaName).Variable
-			ON JobVariable.Variable = Variable.Name
-	WHERE
-		JobVariable.Job = @Job;
+  DECLARE VariableCursor CURSOR
+  FOR
+  SELECT
+    JobVariable.Variable,
+    JobVariable.[Value]
+  FROM
+    [$(SchemaName)].JobVariable
+  WHERE
+    JobVariable.Job = @Job;
 
-	OPEN VariableCursor;
+  OPEN VariableCursor;
 
-	WHILE 1=1
-	BEGIN
+  WHILE 1=1
+  BEGIN
 
-		FETCH NEXT FROM VariableCursor
-		INTO
-			@Variable,
-			@Type,
-			@Value;
+    FETCH NEXT FROM VariableCursor
+    INTO
+      @Variable,
+      @Value;
 
-		IF @@FETCH_STATUS <> 0 
-			BREAK;
+    IF @@FETCH_STATUS <> 0 
+      BREAK;
 
-		SET @VariableBlock = (
-			ISNULL(@VariableBlock,'') + 'DECLARE @'+@Variable+' ' + 
-				CASE @Type 
-					WHEN 'NUMBER' THEN 'INT = '+@Value
-					WHEN 'STRING' THEN 'NVARCHAR(256) = '+@Value
-					ELSE NULL
-				END + '; '+@Newline
-				);
-				
-	END;
+    SET @BaseType = CAST(SQL_VARIANT_PROPERTY (@Value,'BaseType') AS NVARCHAR(256));
+    SET @MaxLength = CAST(SQL_VARIANT_PROPERTY (@Value,'MaxLength') AS INT);
 
-	CLOSE VariableCursor;
-	DEALLOCATE VariableCursor;
+    SET @VariableBlock = (
+      ISNULL(@VariableBlock,'')+
+        'DECLARE @'+@Variable+' '+
+        CASE
+          WHEN @BaseType IN ('varchar','char') THEN
+            @BaseType + '('+CAST(@MaxLength AS NVARCHAR) + ') = ''' + CAST(@Value AS NVARCHAR(4000)) + ''';'
+          WHEN @BaseType IN ('nvarchar','nchar') THEN
+            @BaseType + '('+CAST((@MaxLength/2) AS NVARCHAR) + ') = N''' + CAST(@Value AS NVARCHAR(4000)) + ''';'
+          ELSE
+            @BaseType + ' = ' + CAST(@Value AS NVARCHAR(64)) + ';'
+        END
+        +@Newline
+      );
+        
+  END;
 
-	/* 
-	 *  Set @Routine with statement to execute/parse 
-	 */
+  CLOSE VariableCursor;
+  DEALLOCATE VariableCursor;
 
-	SET @Routine = (
-			'/*<meta> '+@Newline+
-			@Indent+'<job>'+@Job+'</job>'+@Newline+
-			@Indent+'<rule>'+@Rule+'</rule>'+@Newline+
-			@Indent+'<log>'+@Log+'</log>'+@Newline+
-			@Indent+'</meta>*/'+@Newline+
-			'DECLARE @RowDataRESERVED NVARCHAR(MAX) = NULL, '+@Newline+
-			@Indent+'@TimeRESERVED DATETIME2 = GETUTCDATE(); '+@Newline+
-			@VariableBlock+@Newline+
-			'BEGIN TRY '+@Newline+
-			'SET @RowDataRESERVED = CAST(( '+@Newline+
-			'/*>>>User Block Starts Here<<<*/ '+@Newline+
-			@UserBlock+@Newline+
-			'/*>>>User Block Ends Here<<<*/ FOR XML RAW) AS NVARCHAR(MAX)); '+@Newline+
-			'INSERT $(SchemaName).Log ( '+@Newline+
-			@Indent+'[Time],[Status],Job,[Rule],Severity,RowData,Duration,[Exception],Log'+@Newline+
-			@Indent+') VALUES ( '+@Newline+
-			@Indent+'@TimeRESERVED, '+@Newline+
-			@Indent+'IIF(@RowDataRESERVED IS NULL,''PASS'',''FAIL''), '+@Newline+
-			@Indent+''''+@Job+''','+@Newline+
-			@Indent+''''+@Rule+''','+@Newline+
-			@Indent+''''+@Severity+''','+@Newline+
-			@Indent+'LEFT(@RowDataRESERVED,4000),'+@Newline+
-			@Indent+'DATEDIFF(MILLISECOND,@TimeRESERVED,GETUTCDATE()),'+@Newline+
-			@Indent+'NULL,'+@Newline+
-			@Indent+''''+@Log+''''+@Newline+
-			@Indent+'); '+@Newline+
-			'END TRY '+@Newline+
-			'BEGIN CATCH '+@Newline+  
-			'INSERT $(SchemaName).Log ( '+@Newline+
-			@Indent+'[Time],[Status],Job,[Rule],Severity,RowData,Duration,[Exception],Log'+@Newline+
-			@Indent+') VALUES ( '+@Newline+
-			@Indent+'@TimeRESERVED,'+@Newline+
-			@Indent+'''EXCEPTION'','+@Newline+
-			@Indent+''''+@Job+''','+@Newline+
-			@Indent+''''+@Rule+''','+@Newline+
-			@Indent+''''+@Severity+''','+@Newline+
-			@Indent+'NULL,'+@Newline+
-			@Indent+'DATEDIFF(MILLISECOND,@TimeRESERVED,GETUTCDATE()),'+@Newline+
-			@Indent+'''Msg ''+CAST(ERROR_NUMBER() AS VARCHAR) +'', Line ''+CAST(ERROR_LINE() AS VARCHAR)+'': ''+ERROR_MESSAGE(), '+@Newline+
-			@Indent+''''+@Log+''''+@Newline+
-			@Indent+'); '+@Newline+
-			'END CATCH'
-			);
+  /* 
+   *  Set @Routine with statement to execute/parse 
+   */
+
+  SET @Routine = (
+    '/*<meta> '+@Newline+
+    @Indent+'<job>'+@Job+'</job>'+@Newline+
+    @Indent+'<rule>'+@Rule+'</rule>'+@Newline+
+    @Indent+'<log>'+@Log+'</log>'+@Newline+
+    @Indent+'</meta>*/'+@Newline+
+    'DECLARE @RowDataRESERVED NVARCHAR(MAX) = NULL, '+@Newline+
+    @Indent+'@TimeRESERVED DATETIME2 = GETUTCDATE(); '+@Newline+
+    @VariableBlock+@Newline+
+    'BEGIN TRY '+@Newline+
+    'SET @RowDataRESERVED = CAST(( '+@Newline+
+    '/*>>>User Block Starts Here<<<*/ '+@Newline+
+    @UserBlock+@Newline+
+    '/*>>>User Block Ends Here<<<*/ FOR '+@DataRowFormat+') AS NVARCHAR(MAX)); '+@Newline+
+    'INSERT $(SchemaName).Log ( '+@Newline+
+    @Indent+'[Time],[Status],Job,[Rule],Severity,RowData,Duration,[Exception],Log'+@Newline+
+    @Indent+') VALUES ( '+@Newline+
+    @Indent+'@TimeRESERVED, '+@Newline+
+    @Indent+'IIF(@RowDataRESERVED IS NULL,''PASS'',''FAIL''), '+@Newline+
+    @Indent+''''+@Job+''','+@Newline+
+    @Indent+''''+@Rule+''','+@Newline+
+    @Indent+''''+@Severity+''','+@Newline+
+    @Indent+'LEFT(@RowDataRESERVED,4000),'+@Newline+
+    @Indent+'DATEDIFF('+@DurationUnit+',@TimeRESERVED,GETUTCDATE()),'+@Newline+
+    @Indent+'NULL,'+@Newline+
+    @Indent+''''+@Log+''''+@Newline+
+    @Indent+'); '+@Newline+
+    'END TRY '+@Newline+
+    'BEGIN CATCH '+@Newline+  
+    'INSERT $(SchemaName).Log ( '+@Newline+
+    @Indent+'[Time],[Status],Job,[Rule],Severity,RowData,Duration,[Exception],Log'+@Newline+
+    @Indent+') VALUES ( '+@Newline+
+    @Indent+'@TimeRESERVED,'+@Newline+
+    @Indent+'''EXCEPTION'','+@Newline+
+    @Indent+''''+@Job+''','+@Newline+
+    @Indent+''''+@Rule+''','+@Newline+
+    @Indent+''''+@Severity+''','+@Newline+
+    @Indent+'NULL,'+@Newline+
+    @Indent+'DATEDIFF('+@DurationUnit+',@TimeRESERVED,GETUTCDATE()),'+@Newline+
+    @Indent+'''Msg ''+CAST(ERROR_NUMBER() AS VARCHAR) +'', Line ''+CAST(ERROR_LINE() AS VARCHAR)+'': ''+ERROR_MESSAGE(), '+@Newline+
+    @Indent+''''+@Log+''''+@Newline+
+    @Indent+'); '+@Newline+
+    'END CATCH'
+    );
 
     RETURN 0;
 END
@@ -650,6 +722,7 @@ PRINT N'Creating [$(SchemaName)].[RunJob]...';
 
 
 GO
+
 
 
 /*
@@ -673,97 +746,97 @@ GO
 
   Return value:
 
-    0 if successful; non-zero, otherwise.
+    0 if successful, non-zero otherwise.
 
 */
 CREATE PROCEDURE [$(SchemaName)].[RunJob] 
-	@Job      NVARCHAR(64),
-	@Log      VARCHAR(64) OUTPUT,
-	@Verbose  BIT = 0
+  @Job      NVARCHAR(64),
+  @Log      VARCHAR(64) OUTPUT,
+  @Verbose  BIT = 0
 AS
 BEGIN
-	
-	SET NOCOUNT ON;
+  
+  SET NOCOUNT ON;
 
-	IF NOT EXISTS (SELECT 1 FROM $(SchemaName).Job WHERE Name = @Job)
-	BEGIN
-		RAISERROR('Job [%s] not found.',16,1,@Job);
-		RETURN 1;
-	END;
+  IF NOT EXISTS (SELECT 1 FROM [$(SchemaName)].Job WHERE Name = @Job)
+  BEGIN
+    RAISERROR('Job [%s] not found.',16,1,@Job);
+    RETURN 1;
+  END;
 
-	IF @Log IS NULL
-	BEGIN
-		/*  Generate unqiue log name  */
+  IF @Log IS NULL
+  BEGIN
+    /*  Generate unqiue log name  */
     SET @Log = CAST(NEWID() AS NVARCHAR(36));
-	END;
+  END;
 
-	RAISERROR(
-		'Started job [%s]. See log [%s] for details.',0,0,
-		@Job,
-		@Log
-		) WITH NOWAIT;
+  RAISERROR(
+    'Started job [%s]. See log [%s] for details.',0,0,
+    @Job,
+    @Log
+    ) WITH NOWAIT;
 
 
-	/* 
-	 * Run queries enabled for the job 
-	 */
+  /* 
+   * Run queries enabled for the job 
+   */
 
-	DECLARE
-		@Rule VARCHAR(64),
-		@Routine NVARCHAR(MAX),
-		@CursorPosition INT = 1,
-		@CursorRows INT
-		;
+  DECLARE
+    @Rule VARCHAR(64),
+    @Routine NVARCHAR(MAX),
+    @CursorPosition INT = 1,
+    @CursorRows INT
+    ;
 
-	DECLARE RuleCursor CURSOR
-	  FORWARD_ONLY STATIC READ_ONLY
-	  FOR
-	  SELECT [Rule]
-	  FROM $(SchemaName).JobRule
-	  WHERE Job = @job AND [Disabled] <> 1
-	  ORDER BY [Rule] ASC;
+  DECLARE RuleCursor CURSOR
+    FORWARD_ONLY STATIC READ_ONLY
+    FOR
+    SELECT [Rule]
+    FROM [$(SchemaName)].JobRule
+    WHERE Job = @job AND [Disabled] = 0
+    ORDER BY [Rule] ASC;
 
-	OPEN RuleCursor;
+  OPEN RuleCursor;
 
-	SET @CursorRows = @@CURSOR_ROWS;
+  SET @CursorRows = @@CURSOR_ROWS;
 
-	WHILE 1=1
-	BEGIN  
+  WHILE 1=1
+  BEGIN  
 
-		FETCH NEXT 
+    FETCH NEXT 
     FROM RuleCursor
-		INTO @Rule
+    INTO @Rule;
 
-		IF @@FETCH_STATUS <> 0 
-			BREAK;
+    IF @@FETCH_STATUS <> 0 
+      BREAK;
 
-		RAISERROR(
-			'Running [%s] %d of %d',0,0,
-				@Rule,
-				@CursorPosition,
-				@CursorRows
-				) WITH NOWAIT;
+    RAISERROR(
+      'Running [%s] %d of %d',0,0,
+        @Rule,
+        @CursorPosition,
+        @CursorRows
+        ) WITH NOWAIT;
 
-		EXECUTE $(SchemaName).PrepareRoutine 
-			@Job=@Job, 
-			@Rule=@Rule, 
-			@Log=@Log,
-			@Routine=@Routine OUTPUT;
+    EXECUTE [$(SchemaName)].PrepareRoutine 
+      @Job=@Job, 
+      @Rule=@Rule, 
+      @Log=@Log,
+      @Routine=@Routine OUTPUT;
 
-	  IF @Verbose = 1
-			RAISERROR(
-			'%s',0,0,
-				@Routine
-				) WITH NOWAIT;
+    IF @Verbose = 1
+      RAISERROR(
+      '%s',0,0,
+        @Routine
+        ) WITH NOWAIT;
 
-		EXECUTE (@Routine);
+    EXECUTE (@Routine);
 
-		SET @CursorPosition = @CursorPosition+1;
+    SET @CursorPosition = @CursorPosition+1;
 
-	END;
+  END;
 
-	CLOSE RuleCursor;
-	DEALLOCATE RuleCursor;
+  CLOSE RuleCursor;
+  DEALLOCATE RuleCursor;
 
   RETURN 0;
 
@@ -773,6 +846,9 @@ PRINT N'Creating [$(SchemaName)].[AssignRule]...';
 
 
 GO
+
+
+
 
 
 /*
@@ -785,7 +861,8 @@ GO
   This procdure also verifies the rule DML statement with variables already 
   assigned to the job.
 
-  Job and rule must already be defined in tables Job and Rule, respectively.
+  Job, Severity, and Rule must already be defined in tables Job, Severity
+  and Rule, respectively.
 
   Parameters:
 
@@ -793,91 +870,113 @@ GO
 
     @Group - The unique name of the rule to assign.
 
-    @Severity - How the rule's failure will be treated; ERROR or WARNING; 
-      Default ERROR.
+    @Severity - What severity rule failures will be treated.
 
     @Disabled - Whether the rule will be disabled on assignment. 
       Default false (0).
 
   Return value:
 
-    0 if successful; non-zero, otherwise.
+    0 if successful, non-zero otherwise.
 
 */
 CREATE PROCEDURE [$(SchemaName)].[AssignRule] 
-	@Job       NVARCHAR(64),
-	@Rule      NVARCHAR(64),
-	@Severity  NVARCHAR(7) = 'ERROR', /* ERROR or WARNING */
-	@Disabled  BIT = 0
+  @Job       NVARCHAR(64),
+  @Rule      NVARCHAR(64),
+  @Severity  NVARCHAR(64),
+  @Disabled  BIT = 0
 AS
 BEGIN
-	
-	SET NOCOUNT ON;
+  
+  SET NOCOUNT ON;
 
-	DECLARE @Routine NVARCHAR(4000);
+  IF NOT EXISTS (SELECT 1 FROM [$(SchemaName)].Job WHERE name = @Job)
+  BEGIN
+    RAISERROR('Job [%s] not found. INSERT table Job to create.',16,1,@Job);
+    RETURN 1;
+  END;
 
-	IF NOT EXISTS (SELECT 1 FROM $(SchemaName).Job WHERE name = @Job)
-	BEGIN
-		RAISERROR('Job [%s] not found. INSERT table Job to create.',16,1,@Job);
-		RETURN 1;
-	END;
+  IF NOT EXISTS (SELECT 1 FROM [$(SchemaName)].[Rule] WHERE name = @Rule)
+  BEGIN
+    RAISERROR('Rule [%s] not found. INSERT table Rule to create.',16,1,@Rule);
+    RETURN 1;
+  END;
 
-	IF NOT EXISTS (SELECT 1 FROM $(SchemaName).[Rule] WHERE name = @Rule)
-	BEGIN
-		RAISERROR('Rule [%s] not found. INSERT table Rule to create.',16,1,@Rule);
-		RETURN 1;
-	END;
+  SET @Disabled = ISNULL(@Disabled,0);
 
 BEGIN TRY
 
-	BEGIN TRANSACTION;
+  BEGIN TRANSACTION;
 
-	IF NOT EXISTS (
-		SELECT
-			1
-		FROM
-			$(SchemaName).JobRule
-		WHERE	
-			JobRule.Job = @Job
-			AND JobRule.[Rule] = @Rule
-		) INSERT $(SchemaName).JobRule (Job, [Rule], Severity, [Disabled]) 
-			VALUES (@Job, @Rule, @Severity, @Disabled)
-	ELSE
-		UPDATE $(SchemaName).JobRule
-			SET Severity = @Severity,
-				[Disabled] = @Disabled
-		WHERE
-			Job = @Job
-			AND [Rule] = @Rule
-			; 
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      [$(SchemaName)].JobRule
+    WHERE	
+      JobRule.Job = @Job
+      AND JobRule.[Rule] = @Rule
+    ) 
+  BEGIN  
 
-	IF @Disabled = 0
-	BEGIN
+    IF NOT EXISTS (SELECT 1 FROM [$(SchemaName)].[Severity] WHERE Name = @Severity)
+    BEGIN
+      RAISERROR('Severity [%s] not found. INSERT table Severity to create.',16,1,@Severity);
 
-			EXEC $(SchemaName).PrepareRoutine 
-				@Job=@Job, 
-				@Rule=@Rule, 
-				@Log='SetJobRule',
-				@Routine=@Routine OUTPUT
-				;
+    END;
 
-		SET @Routine = ('SET NOEXEC ON; ' + @Routine);
+    INSERT [$(SchemaName)].JobRule (Job, [Rule], Severity, [Disabled]) 
+      VALUES (@Job, @Rule, @Severity, @Disabled);
 
-		EXECUTE (@Routine);
-		
-	END;
+  END
+  ELSE
+  BEGIN
 
-	COMMIT TRANSACTION;
+    IF @Severity IS NOT NULL
+      UPDATE [$(SchemaName)].JobRule
+        SET Severity = @Severity,
+          [Disabled] = @Disabled
+      WHERE
+        Job = @Job
+        AND [Rule] = @Rule
+    ELSE
+      UPDATE [$(SchemaName)].JobRule
+        SET [Disabled] = @Disabled
+      WHERE
+        Job = @Job
+        AND [Rule] = @Rule
+      ; 
 
-	RETURN 0;
+  END;
+
+  IF @Disabled = 0
+  BEGIN
+
+    DECLARE @Routine NVARCHAR(4000);
+
+    EXEC [$(SchemaName)].PrepareRoutine 
+      @Job=@Job, 
+      @Rule=@Rule, 
+      @Log='AssignRule',
+      @Routine=@Routine OUTPUT;
+
+    SET @Routine = ('SET NOEXEC ON; ' + @Routine);
+
+    EXECUTE (@Routine);
+    
+  END;
+
+  COMMIT TRANSACTION;
+
+  RETURN 0;
 
 END TRY
 BEGIN CATCH
 
-	ROLLBACK TRANSACTION;
-	THROW;
+  ROLLBACK TRANSACTION;
+  THROW;
 
-	RETURN 1;
+  RETURN 1;
 
 END CATCH
 
@@ -887,6 +986,11 @@ PRINT N'Creating [$(SchemaName)].[Example]...';
 
 
 GO
+
+
+
+
+
 
 
 /*
@@ -911,16 +1015,16 @@ DELETE FROM $(SchemaName).[Rule] WHERE Name LIKE 'Example%';
 
 
 /*  Setting up test data to validate  */
-	
+  
 IF OBJECT_ID('dbo.StudentExample','U') IS NOT NULL
-	DROP TABLE dbo.StudentExample;
+  DROP TABLE dbo.StudentExample;
 
 CREATE TABLE dbo.StudentExample (
-	Id							INT IDENTITY(1,1) NOT NULL,
-	Name						NVARCHAR(764) NULL,
-	BirthDate				DATE NULL,
-	StudentUniqueId NVARCHAR(32) NULL
-	);
+  Id							INT IDENTITY(1,1) NOT NULL,
+  Name						NVARCHAR(764) NULL,
+  BirthDate				DATE NULL,
+  StudentUniqueId NVARCHAR(32) NULL
+  );
 
 INSERT INTO dbo.StudentExample (Name,BirthDate,StudentUniqueId) 
   VALUES ('John Doe','1970-01-01','000001');
@@ -929,113 +1033,147 @@ INSERT INTO dbo.StudentExample (Name,BirthDate,StudentUniqueId)
 INSERT INTO dbo.StudentExample (Name,BirthDate,StudentUniqueId) 
   VALUES ('John Doe 3rd','2020-01-01','000002');
 
+SELECT * FROM dbo.StudentExample;
+
 
 
 /*  Define variables to be referred to in validation rules */
 
-INSERT $(SchemaName).Variable (Name, Type, Description) VALUES (
+INSERT $(SchemaName).Variable (Name, Description) VALUES (
 
-	'ExampleVariableBirthYearThreshold', 'NUMBER', 
-	
-	'Example Variable for Birth Year Threshold'
-	
-	);
+  'ExampleBirthYearThreshold',
+  'Example variable for birth year threshold'
+  
+  );
+
+/*  Define variables to be referred to in validation rules */
+
+INSERT $(SchemaName).Variable (Name, Description) VALUES (
+
+  'ExampleNameMask',
+  'Example Variable to mask out certain names'
+  
+  );
 
 
 
 /*  Define rules  */
 
 INSERT $(SchemaName).[Rule] (Name, Description, Statement) VALUES (
-	
-	'Example Rule 1',
-	'BirthDate Below Threshold',
+  
+  'Example.1',
+  'BirthDate Below Threshold',
 
-	/* this rule references ExampleVariableBirthYearThreshold variable */
+  /* this rule references ExampleBirthYearThreshold variable */
  'SELECT id, BirthDate 
-	FROM dbo.StudentExample 
-	WHERE YEAR(BirthDate) < @ExampleVariableBirthYearThreshold'
-	
-	);
+  FROM dbo.StudentExample 
+  WHERE YEAR(BirthDate) < @ExampleBirthYearThreshold'
+  
+  );
 
 
 INSERT $(SchemaName).[Rule] (Name, Description, Statement) VALUES (
-	
-	'Example Rule 2', 
-	'StudentUniqueID Not Unique',
+  
+  'Example.2', 
+  'StudentUniqueID Not Unique',
 
  'SELECT StudentUniqueID 
-	FROM dbo.StudentExample 
-	GROUP BY StudentUniqueID HAVING COUNT(*) > 1'
-	
-	);
+  FROM dbo.StudentExample 
+  GROUP BY StudentUniqueID HAVING COUNT(*) > 1'
+  
+  );
 
 INSERT $(SchemaName).[Rule] (Name, Description, Statement) VALUES (
-	
-	'Example Rule 3',
-	'Name Contains Numbers',
+  
+  'Example.3',
+  'Name Contains Numbers',
 
  'SELECT id, Name 
-	FROM dbo.StudentExample 
-	WHERE Name LIKE ''%[0-9]%''' 
-	
-	);
+  FROM dbo.StudentExample 
+  WHERE Name LIKE ''%[0-9]%''' 
+  
+  );
 
 INSERT $(SchemaName).[Rule] (Name, Description, Statement) VALUES (
-	
-	'Example Rule 4', 	
-	'Name Not Empty',
+  
+  'Example.4', 	
+  'Name Not Empty',
 
  'SELECT id, Name 
-	FROM dbo.StudentExample 
-	WHERE LEN(Name) = 0'
+  FROM dbo.StudentExample 
+  WHERE LEN(Name) = 0'
  
-	); 
-	
+  ); 
+
+INSERT $(SchemaName).[Rule] (Name, Description, Statement) VALUES (
+  
+  'Example.5', 	
+  'Name is matches name mask',
+
+  /* this rule references ExampleNameMask variable */
+ 'SELECT id, Name 
+  FROM dbo.StudentExample 
+  WHERE Name LIKE @ExampleNameMask'
+ 
+  ); 
+  
 
 
 /*  Define job  */
+
 INSERT $(SchemaName).Job (Name, Description) VALUES (
-	'Example Job',
-	'This is our example job'
-	);
+  'Example Job',
+  'This is our example job'
+  );
 
 
-/*  Set up job  */
+/*  Assign variables for job */
 EXEC $(SchemaName).AssignVariable 
-	@Job = 'Example Job',
-	@Variable = 'ExampleVariableBirthYearThreshold',
-	@Value = '2000';
+  @Job = 'Example Job',
+  @Variable = 'ExampleBirthYearThreshold',
+  @Value = 2000;
+
+EXEC $(SchemaName).AssignVariable 
+  @Job = 'Example Job',
+  @Variable = 'ExampleNameMask',
+  @Value = '%John Doe%';
 
 
+/*  Assign rules to job  */
 EXEC $(SchemaName).AssignRule 
-	@Job = 'Example Job',
-	@Rule = 'Example Rule 1',
-	@Severity = 'WARNING';
+  @Job = 'Example Job',
+  @Rule = 'Example.1',
+  @Severity = 'WARNING';
 
 EXEC $(SchemaName).AssignRule
-	@Job = 'Example Job',
-	@Rule = 'Example Rule 2',
-	@Severity = 'ERROR';
+  @Job = 'Example Job',
+  @Rule = 'Example.2',
+  @Severity = 'ERROR';
 
 EXEC $(SchemaName).AssignRule
-	@Job = 'Example Job',
-	@Rule = 'Example Rule 3',
-	@Severity = 'WARNING';
+  @Job = 'Example Job',
+  @Rule = 'Example.3',
+  @Severity = 'WARNING';
 
 EXEC $(SchemaName).AssignRule
-	@Job = 'Example Job',
-	@Rule = 'Example Rule 4',
-	@Severity = 'WARNING';
+  @Job = 'Example Job',
+  @Rule = 'Example.4',
+  @Severity = 'WARNING';
+
+EXEC $(SchemaName).AssignRule
+  @Job = 'Example Job',
+  @Rule = 'Example.5',
+  @Severity = 'WARNING';
 
 
-/*  Generate unqiue log name  */
 DECLARE @Log NVARCHAR(64);
 
 /*  Run job  */
 EXEC $(SchemaName).RunJob
-	@Job = 'Example Job',
-	@Log = @Log OUTPUT
-	;
+  @Job = 'Example Job',
+  @Log = @Log OUTPUT
+  ,@Verbose = 1
+  ;
 
 /* Inspect job config */
 SELECT * FROM $(SchemaName).[Job];
@@ -1055,19 +1193,17 @@ ALTER TABLE [$(SchemaName)].[JobRule] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaNa
 
 ALTER TABLE [$(SchemaName)].[JobRule] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_JobRule_Rule];
 
-ALTER TABLE [$(SchemaName)].[JobVariable] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_JobVariable_Job];
-
-ALTER TABLE [$(SchemaName)].[JobVariable] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_JobVariable_Variable];
+ALTER TABLE [$(SchemaName)].[JobRule] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_JobRule_Severity];
 
 ALTER TABLE [$(SchemaName)].[RuleGroup] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_RuleGroup_Group];
 
 ALTER TABLE [$(SchemaName)].[RuleGroup] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_RuleGroup_Rule];
 
-ALTER TABLE [$(SchemaName)].[Variable] WITH CHECK CHECK CONSTRAINT [CK_$(SchemaName)_Variable_Type];
+ALTER TABLE [$(SchemaName)].[JobVariable] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_JobVariable_Job];
+
+ALTER TABLE [$(SchemaName)].[JobVariable] WITH CHECK CHECK CONSTRAINT [FK_$(SchemaName)_JobVariable_Variable];
 
 ALTER TABLE [$(SchemaName)].[Variable] WITH CHECK CHECK CONSTRAINT [CK_$(SchemaName)_Variable_Name];
-
-ALTER TABLE [$(SchemaName)].[JobRule] WITH CHECK CHECK CONSTRAINT [CK_$(SchemaName)_JobRule_Severity];
 
 ALTER TABLE [$(SchemaName)].[Rule] WITH CHECK CHECK CONSTRAINT [CK_$(SchemaName)_Rule_Statement];
 
